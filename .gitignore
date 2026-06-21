@@ -1,0 +1,70 @@
+.ipynb_checkpoints/
+# Python
+
+**pycache**/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+
+venv/
+env/
+.venv/
+
+# Jupyter
+
+.ipynb_checkpoints/
+
+# VS Code
+
+.vscode/
+
+# Streamlit
+
+.streamlit/
+
+# Environment Variables
+
+.env
+
+# Logs
+
+*.log
+
+# Cache
+
+.cache/
+.pytest_cache/
+
+# OS Files
+
+.DS_Store
+Thumbs.db
+
+# Generated Files
+
+recommended_jobs.csv
+
+# User Uploaded Resumes
+
+resume.pdf
+*.pdf
+
+# Large Model Artifacts
+
+job_embeddings.pkl
+jobs.pkl
+
+# Build Files
+
+build/
+dist/
+*.egg-info/
+
+# Temporary Files
+
+temp/
+tmp/
+
+data/
+*.csv
