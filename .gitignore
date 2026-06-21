@@ -68,3 +68,6 @@ tmp/
 
 data/
 *.csv
+*.pkl
+clustered_jobs.pkl
+
