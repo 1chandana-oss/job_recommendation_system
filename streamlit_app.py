@@ -1,52 +1,100 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-import pickle
-import pdfplumber
 
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
+import streamlit as st
+import plotly.express as px
+import pandas as pd
+
+from config import (
+    PAGE_TITLE,
+    PAGE_ICON,
+    LAYOUT
+)
+
+from utils import (
+    extract_resume_text,
+    get_resume_statistics,
+    clean_text
+)
+
+from recommend import (
+    load_model,
+    load_jobs,
+    load_job_embeddings,
+    create_resume_embedding,
+    recommend_jobs,
+    get_summary_metrics,
+    get_career_paths
+)
 
 # ==========================
 # PAGE CONFIG
 # ==========================
 
 st.set_page_config(
-    page_title="AI Job Recommendation System",
-    page_icon="💼",
-    layout="wide"
+    page_title=PAGE_TITLE,
+    page_icon=PAGE_ICON,
+    layout=LAYOUT
 )
 
+# ==========================
+# SIDEBAR
+# ==========================
+
+with st.sidebar:
+
+    st.title("💼 AI Job Recommender")
+
+    st.markdown("### 🤖 Model")
+    st.write("Sentence-BERT")
+    st.caption("all-MiniLM-L6-v2")
+
+    st.markdown("### 📊 Dataset")
+    st.write("10,000 LinkedIn Job Postings")
+    st.markdown("### 🚀 Features")
+
+    st.write("✅ Resume Parsing")
+    st.write("✅ Semantic Search")
+    st.write("✅ Job Recommendation")
+    st.write("✅ Download Results")
+
+    st.markdown("---")
+
+    st.caption("Developed by")
+    st.write("**Chandana Das**")
+
+# ==========================
+# TITLE
+# ==========================
+
 st.title("💼 AI-Powered Job Recommendation System")
-st.write("Upload your resume and get personalized job recommendations.")
+
+st.write(
+    "Upload your resume and receive AI-powered personalized job recommendations."
+)
 
 # ==========================
 # LOAD MODEL & DATA
 # ==========================
 
 @st.cache_resource
-def load_model():
-    return SentenceTransformer("all-MiniLM-L6-v2")
+def load_resources():
 
-@st.cache_data
-def load_jobs():
-    return pd.read_pickle("jobs.pkl")
+    model = load_model()
 
-@st.cache_data
-def load_embeddings():
-    with open("job_embeddings.pkl", "rb") as f:
-        return pickle.load(f)
+    jobs = load_jobs()
 
-model = load_model()
-jobs = load_jobs()
-job_embeddings = load_embeddings()
+    embeddings = load_job_embeddings()
+
+    return model, jobs, embeddings
+
+
+model, jobs, job_embeddings = load_resources()
 
 # ==========================
-# RESUME UPLOAD
+# FILE UPLOAD
 # ==========================
 
 uploaded_file = st.file_uploader(
-    "Upload Resume (PDF)",
+    "📄 Upload Resume (PDF)",
     type=["pdf"]
 )
 
@@ -54,123 +102,318 @@ uploaded_file = st.file_uploader(
 # PROCESS RESUME
 # ==========================
 
-
 if uploaded_file:
 
-    resume_text = ""
-
-    with pdfplumber.open(uploaded_file) as pdf:
-
-        for page in pdf.pages:
-
-            text = page.extract_text()
-
-            if text:
-                resume_text += text
-
-    # Resume Preview
-
-    st.subheader("Resume Preview")
-
-    st.text_area(
-        "Extracted Text",
-        resume_text[:1500],
-        height=250
+    resume_text, total_pages = extract_resume_text(
+        uploaded_file
     )
 
-    # Resume Embedding
+    resume_text = clean_text(
+        resume_text
+    )
 
-    resume_embedding = model.encode(
+    stats = get_resume_statistics(
         resume_text,
-        convert_to_numpy=True
+        total_pages
     )
 
-    similarities = cosine_similarity(
-        [resume_embedding],
+
+    # ==========================
+    # RECOMMENDATION
+    # ==========================
+
+    resume_embedding = create_resume_embedding(
+        model,
+        resume_text
+    )
+
+    recommended_jobs = recommend_jobs(
+        resume_embedding,
+        jobs,
         job_embeddings
-    ).flatten()
-
-    top_indices = np.argsort(
-        similarities
-    )[-20:][::-1]
-
-    recommended_jobs = jobs.iloc[
-        top_indices
-    ].copy()
-
-    recommended_jobs["match_score"] = (
-        similarities[top_indices] * 100
     )
 
-    # Metrics
+    metrics = get_summary_metrics(
+        recommended_jobs
+    )
+    career_paths = get_career_paths(
+       recommended_jobs
+    )
+    career_paths = [
+       c for c in career_paths
+       if c["jobs"] >= 2
+    ]
+    st.subheader("📄 Resume Insights")
 
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.metric(
+            "Pages",
+            stats["pages"]
+        )
+
+    with c2:
+        st.metric(
+            "Words",
+            stats["words"]
+        )
+
+    with c3:
+        st.metric(
+            "Characters",
+            stats["characters"]
+        )
+    # ==========================
+    # DASHBOARD METRICS
+    # ==========================
+
+    # ==========================
+# Recommendation Summary
+# ==========================
+
+# ==========================
+# Career Paths
+# ==========================
+
+    st.subheader("🚀 Recommended Career Paths")
+
+    total_jobs = metrics["recommendations"]
+
+    for i, career in enumerate(career_paths[:3]):
+
+       medal = ["🥇", "🥈", "🥉"][i]
+
+       percentage = (
+           career["jobs"] / total_jobs
+        ) * 100
+
+       st.markdown(f"""
+       ### {medal} {career['domain']}
+
+       **Matching Jobs:** {career['jobs']}
+
+       **Coverage:** {percentage:.1f}%
+        """)
+
+       st.progress(percentage/100)
+
+       st.markdown("---")
+
+
+    m1, m2, m3 = st.columns(3)
+
+    with m1:
+        st.metric(
+            "Recommendations",
+            metrics["recommendations"]
+        )
+
+    with m2:
+        st.metric(
+            "Highest Match",
+            f"{metrics['highest_match']:.2f}%"
+        )
+
+       
+    with m3:
+        st.metric(
+            "Average Compatibility",
+            f"{metrics['average_match']:.2f}%"
+        )
+        # ==========================
+# SIDEBAR FILTERS
+# ==========================
+
+    st.sidebar.markdown("---")
+    st.subheader("🔍 Filter Recommendations")
+
+    col1, col2 = st.columns(2)
 
     with col1:
-        st.metric(
-            "Jobs Matched",
-            len(recommended_jobs)
+        work_type = st.selectbox(
+            "Work Type",
+            ["All"] + sorted(
+                recommended_jobs["formatted_work_type"]
+                .dropna()
+                .unique()
+                .tolist()
+            )
         )
 
     with col2:
-        st.metric(
-            "Best Match",
-            f"{recommended_jobs['match_score'].max():.1f}%"
+        experience = st.selectbox(
+            "Experience Level",
+            ["All"] + sorted(
+                recommended_jobs["formatted_experience_level"]
+                .dropna()
+                .unique()
+                .tolist()
+            )
         )
 
-    with col3:
-        st.metric(
-            "Average Match",
-            f"{recommended_jobs['match_score'].mean():.1f}%"
+    filtered_jobs = recommended_jobs.copy()
+
+    if work_type != "All":
+        filtered_jobs = filtered_jobs[
+            filtered_jobs["formatted_work_type"] == work_type
+        ]
+
+    if experience != "All":
+        filtered_jobs = filtered_jobs[
+            filtered_jobs["formatted_experience_level"] == experience
+        ]
+
+    search = st.text_input("🔍 Search Job Title")
+
+    if search:
+       filtered_jobs = filtered_jobs[
+        filtered_jobs["title"].str.contains(
+            search,
+            case=False,
+            na=False
         )
+    ]
 
-    # Career Domains
+    st.subheader("📊 Top Match Scores")
+    chart = (
+    filtered_jobs.head(10)
+    .sort_values("match_score")
+)
 
-    # st.subheader("🚀 Recommended Career Domains")
+    fig = px.bar(
+    chart,
+    x="match_score",
+    y="title",
+    orientation="h",
+    text="match_score",
+    title="Top 10 Match Scores"
+)
 
-    # st.success("🥇 Data Engineering & Analytics")
-    # st.info("🥈 Enterprise Systems & Software Engineering")
-    # st.warning("🥉 Data Science & Business Intelligence")
+    fig.update_traces(texttemplate="%{text:.1f}%", textposition="outside")
 
-    # Recommendations Table
+    fig.update_layout(
+    xaxis_title="Match Score (%)",
+    yaxis_title="",
+    height=500
+)
 
+    st.plotly_chart(
+       fig,
+       width="stretch"
+)
+
+
+
+
+    # ==========================
+    # JOB RECOMMENDATIONS
+    # ==========================
     st.subheader("🎯 Top Job Recommendations")
 
-    st.dataframe(
-        recommended_jobs[
-            [
-                "title",
-                "company_name",
-                "location",
-                "match_score"
-            ]
-        ],
-        use_container_width=True
+    for _, row in filtered_jobs.iterrows():
+
+       with st.expander(
+        f"💼 {row['title']} ({row['match_score']:.1f}%)"
+    ):
+
+        st.write(f"🏢 Company: {row['company_name']}")
+
+        st.write(f"📍 Location: {row['location']}")
+
+        st.write(f"💼 Work Type: {row['formatted_work_type']}")
+
+        st.write(f"🎓 Experience: {row['formatted_experience_level']}")
+
+        st.write(f"⭐ Match Score: {row['match_score']:.2f}%")
+
+        st.progress(row["match_score"]/100)
+
+        # ==========================
+        # Required Skills
+        # ==========================
+
+        if (
+            "skills_desc" in row
+            and pd.notna(row["skills_desc"])
+        ):
+
+            st.markdown("### 🛠 Required Skills")
+
+            st.write(row["skills_desc"])
+
+        # ==========================
+        # Job Description
+        # ==========================
+
+        if (
+            "description" in row
+            and pd.notna(row["description"])
+        ):
+
+            st.markdown("### 📄 Job Description")
+
+            st.write(row["description"][:800] + "...")
+
+        # ==========================
+        # Apply Button
+        # ==========================
+
+        if (
+            "job_posting_url" in row
+            and pd.notna(row["job_posting_url"])
+        ):
+
+            st.link_button(
+                "🚀 Apply Now",
+                row["job_posting_url"]
+            )
+
+        st.markdown("---")
+
+    # ==========================
+    # DOWNLOAD
+    # ==========================
+
+    csv = filtered_jobs.to_csv(
+      index=False
     )
-
-    # Download Button
-
-    csv = recommended_jobs.to_csv(
-        index=False
-    )
-
     st.download_button(
-        label="📥 Download Recommendations",
-        data=csv,
-        file_name="recommended_jobs.csv",
-        mime="text/csv",
-        key="download_csv"
+
+        "📥 Download Recommendations",
+
+        csv,
+
+        "filtered_recommendations.csv",
+
+        "text/csv"
+
     )
+
+    # ==========================
+    # FOOTER
+    # ==========================
+
+
+    with st.expander("⚙️ How It Works"):
+
+     st.markdown("""
+1. Upload your resume.
+
+2. Resume text is extracted.
+
+3. Sentence-BERT generates semantic embeddings.
+
+4. Cosine similarity compares your resume with job descriptions.
+
+5. The system recommends the most relevant jobs.
+""")
 
     st.markdown("---")
 
-    st.markdown("""
-    ### How It Works
+    st.caption(
+        "Built using Python • Sentence Transformers • Scikit-learn • Pandas • Streamlit"
+    )
 
-    1. Resume is uploaded
-    2. Text is extracted from PDF
-    3. Sentence-BERT generates embeddings
-    4. Semantic similarity search is performed
-    5. Relevant jobs are recommended
-    """)
+
 
